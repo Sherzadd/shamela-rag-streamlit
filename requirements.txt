@@ -1,0 +1,6 @@
+streamlit==1.65.0
+openai==3.26.0
+mcp==2.3.0
+httpx2==2.13.1
+python-dotenv
+pydantic

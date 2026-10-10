@@ -1,0 +1,7 @@
+.env
+.shamela_auth.json
+.venv_notebook/
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+notebooks/
