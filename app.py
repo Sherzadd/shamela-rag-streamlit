@@ -24,19 +24,25 @@ st.set_page_config(
 # =========================================================
 
 def safe_text(text):
+    """
+    Safely display retrieved/model text inside HTML.
+    """
     return html.escape(
         str(text or "")
     ).replace("\n", "<br>")
 
 
 def extract_url(value):
+    """
+    Extract a normal URL from Shamela's source_url field.
+    """
     if not value:
         return None
 
     value = str(value)
 
     match = re.search(
-        r"https?://[^\s\)]+",
+        r"https?://[^\s)]+",
         value
     )
 
@@ -139,6 +145,7 @@ st.html(
         background: rgba(255, 255, 255, 0.9);
         border-radius: 20px !important;
         border: 1px solid #e2e8f0 !important;
+
         box-shadow:
             0 8px 28px
             rgba(15, 23, 42, 0.05);
@@ -175,6 +182,7 @@ st.html(
 
     div[data-testid="stTextArea"] textarea:focus {
         border-color: #2563eb !important;
+
         box-shadow:
             0 0 0 3px
             rgba(37, 99, 235, 0.12)
@@ -352,7 +360,6 @@ st.html(
         text-align: right;
 
         font-weight: 700;
-
         color: #475569;
 
         margin-top: 1rem;
@@ -369,7 +376,6 @@ st.html(
         border-radius: 10px;
 
         padding: 1.2rem;
-
         margin-top: 0.8rem;
 
         font-size: 1rem;
@@ -505,6 +511,52 @@ st.html(
         display: none;
     }
 
+
+    /* =====================================================
+       MOBILE RESPONSIVE DESIGN
+    ===================================================== */
+
+    @media (max-width: 768px) {
+
+        .block-container {
+            padding-left: 1rem;
+            padding-right: 1rem;
+            padding-top: 0.5rem;
+        }
+
+        .hero {
+            padding-top: 0.7rem;
+        }
+
+        .hero-icon {
+            font-size: 2.4rem;
+        }
+
+        .hero-title {
+            font-size: 2rem;
+            line-height: 1.4;
+        }
+
+        .hero-subtitle {
+            font-size: 0.98rem;
+            line-height: 1.9;
+        }
+
+        .answer-card {
+            padding: 1.3rem 1.2rem;
+            font-size: 1.05rem;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+        }
+
+        div[data-testid="stMetric"] {
+            padding: 0.75rem;
+        }
+
+    }
+
     </style>
     """
 )
@@ -588,31 +640,51 @@ if submitted:
 
     else:
 
-        with st.spinner(
-            "جاري البحث في المكتبة الشاملة وتحليل الأدلة..."
-        ):
+        # Remove the previous answer while the new query runs
+        st.session_state.result = None
 
-            try:
+        status_box = st.status(
+            "بدء البحث...",
+            expanded=True
+        )
 
-                result = asyncio.run(
-                    shamela_rag(
-                        question.strip()
-                    )
+        def update_progress(stage, message):
+            status_box.write(message)
+
+        try:
+
+            result = asyncio.run(
+                shamela_rag(
+                    question.strip(),
+                    top_k=3,
+                    progress_callback=update_progress
                 )
+            )
 
-                st.session_state.result = result
+            st.session_state.result = result
 
-            except Exception as error:
+            status_box.update(
+                label="✅ اكتمل البحث والتحقق",
+                state="complete",
+                expanded=False
+            )
 
-                st.error(
-                    "حدث خطأ أثناء تنفيذ البحث."
-                )
+        except Exception as error:
 
-                with st.expander(
-                    "عرض تفاصيل الخطأ"
-                ):
+            status_box.update(
+                label="حدث خطأ أثناء البحث",
+                state="error",
+                expanded=True
+            )
 
-                    st.exception(error)
+            st.error(
+                "حدث خطأ أثناء تنفيذ البحث."
+            )
+
+            with st.expander(
+                "عرض تفاصيل الخطأ"
+            ):
+                st.exception(error)
 
 
 # =========================================================
@@ -1033,6 +1105,58 @@ if result:
                 "grounding_score"
             ],
         )
+
+
+        # =================================================
+        # PERFORMANCE TIMINGS
+        # =================================================
+
+        if result.get("timings"):
+
+            st.markdown(
+                "### ⏱ زمن التنفيذ"
+            )
+
+            timings = result[
+                "timings"
+            ]
+
+            st.write(
+                "**استرجاع المصادر:**",
+                (
+                    f'{timings.get("retrieval_seconds", 0)} '
+                    "ثانية"
+                )
+            )
+
+            st.write(
+                "**إنشاء الإجابة:**",
+                (
+                    f'{timings.get("generation_seconds", 0)} '
+                    "ثانية"
+                )
+            )
+
+            st.write(
+                "**التحقق من الادعاءات:**",
+                (
+                    f'{timings.get("verification_seconds", 0)} '
+                    "ثانية"
+                )
+            )
+
+            st.write(
+                "**الوقت الإجمالي:**",
+                (
+                    f'{timings.get("total_seconds", 0)} '
+                    "ثانية"
+                )
+            )
+
+
+        # =================================================
+        # ORIGINAL DRAFT
+        # =================================================
 
         with st.expander(
             "عرض الإجابة الأولية قبل التحقق"
