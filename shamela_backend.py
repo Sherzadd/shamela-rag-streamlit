@@ -19,18 +19,16 @@ import httpx2
 from dotenv import load_dotenv
 from pydantic import AnyUrl
 from openai import AsyncOpenAI
+from upstash_redis import Redis as UpstashRedis
 
 from mcp import Client
-
 from mcp.client.auth import (
     AuthorizationCodeResult,
     OAuthClientProvider,
 )
-
 from mcp.client.streamable_http import (
     streamable_http_client,
 )
-
 from mcp.shared.auth import (
     OAuthClientInformationFull,
     OAuthClientMetadata,
@@ -43,12 +41,10 @@ from mcp.shared.auth import (
 # =========================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-
 ENV_FILE = PROJECT_ROOT / ".env"
 
 if ENV_FILE.exists():
     load_dotenv(ENV_FILE)
-
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -60,7 +56,7 @@ if not OPENAI_API_KEY:
 
 DEFAULT_MODEL = os.getenv(
     "OPENAI_MODEL",
-    "gpt-6.1-sol"
+    "gpt-6.1-sol",
 )
 
 
@@ -79,50 +75,39 @@ SHAMELA_AUTH_B64 = os.getenv(
 )
 
 
+UPSTASH_REDIS_REST_URL = os.getenv(
+    "UPSTASH_REDIS_REST_URL"
+)
+
+
+UPSTASH_REDIS_REST_TOKEN = os.getenv(
+    "UPSTASH_REDIS_REST_TOKEN"
+)
+
+
+USE_REDIS = bool(
+    UPSTASH_REDIS_REST_URL
+    and UPSTASH_REDIS_REST_TOKEN
+)
+
+
 IS_CLOUD = bool(
-    SHAMELA_AUTH_B64
+    USE_REDIS
+    or SHAMELA_AUTH_B64
 )
 
 
 # =========================================================
-# INITIALIZE CLOUD AUTH
-# =========================================================
-
-def initialize_cloud_auth():
-    """
-    On Streamlit Cloud, always initialize the local
-    OAuth file from the SHAMELA_AUTH_B64 secret.
-
-    Locally, keep using the existing .shamela_auth.json.
-    """
-
-    if SHAMELA_AUTH_B64:
-        try:
-            auth_bytes = base64.b64decode(
-                SHAMELA_AUTH_B64
-            )
-
-            SHAMELA_AUTH_FILE.write_bytes(
-                auth_bytes
-            )
-
-            return
-
-        except Exception as exc:
-            raise RuntimeError(
-                "Could not initialize Shamela "
-                "authentication from SHAMELA_AUTH_B64."
-            ) from exc
-
-    if SHAMELA_AUTH_FILE.exists():
-        return
-
-
-# =========================================================
-# PERSISTENT TOKEN STORAGE
+# LOCAL FILE TOKEN STORAGE
 # =========================================================
 
 class FileTokenStorage:
+    """
+    Persistent OAuth storage for local development.
+
+    Local development continues to use:
+        .shamela_auth.json
+    """
 
     def __init__(self, path):
         self.path = Path(path)
@@ -133,6 +118,7 @@ class FileTokenStorage:
             return {}
 
         try:
+
             return json.loads(
                 self.path.read_text(
                     encoding="utf-8"
@@ -141,8 +127,9 @@ class FileTokenStorage:
 
         except (
             json.JSONDecodeError,
-            OSError
+            OSError,
         ):
+
             return {}
 
     def _write(self, data):
@@ -151,16 +138,18 @@ class FileTokenStorage:
             json.dumps(
                 data,
                 ensure_ascii=False,
-                indent=2
+                indent=2,
             ),
-            encoding="utf-8"
+            encoding="utf-8",
         )
 
     async def get_tokens(self):
 
         data = self._read()
 
-        tokens = data.get("tokens")
+        tokens = data.get(
+            "tokens"
+        )
 
         if not tokens:
             return None
@@ -171,7 +160,7 @@ class FileTokenStorage:
 
     async def set_tokens(
         self,
-        tokens
+        tokens,
     ):
 
         data = self._read()
@@ -182,7 +171,9 @@ class FileTokenStorage:
             )
         )
 
-        self._write(data)
+        self._write(
+            data
+        )
 
     async def get_client_info(self):
 
@@ -204,7 +195,7 @@ class FileTokenStorage:
 
     async def set_client_info(
         self,
-        client_info
+        client_info,
     ):
 
         data = self._read()
@@ -215,12 +206,382 @@ class FileTokenStorage:
             )
         )
 
-        self._write(data)
+        self._write(
+            data
+        )
 
 
-token_storage = FileTokenStorage(
-    SHAMELA_AUTH_FILE
-)
+# =========================================================
+# REDIS TOKEN STORAGE
+# =========================================================
+
+class RedisTokenStorage:
+    """
+    Persistent OAuth storage for Streamlit Cloud.
+
+    Upstash Redis survives Streamlit machine restarts.
+
+    When Shamela refreshes or rotates OAuth tokens,
+    set_tokens() stores the new token state in Redis.
+    """
+
+    TOKENS_KEY = (
+        "shamela:oauth:tokens"
+    )
+
+    CLIENT_INFO_KEY = (
+        "shamela:oauth:client_info"
+    )
+
+    def __init__(
+        self,
+        url,
+        token,
+    ):
+
+        self.redis = UpstashRedis(
+            url=url,
+            token=token,
+        )
+
+    @staticmethod
+    def _decode_value(
+        value
+    ):
+
+        if value is None:
+            return None
+
+        if isinstance(
+            value,
+            bytes
+        ):
+
+            value = value.decode(
+                "utf-8"
+            )
+
+        if isinstance(
+            value,
+            str
+        ):
+
+            return json.loads(
+                value
+            )
+
+        if isinstance(
+            value,
+            dict
+        ):
+
+            return value
+
+        raise RuntimeError(
+            "Unexpected Redis OAuth data type."
+        )
+
+    async def get_tokens(self):
+
+        raw = self.redis.get(
+            self.TOKENS_KEY
+        )
+
+        data = (
+            self._decode_value(
+                raw
+            )
+        )
+
+        if not data:
+            return None
+
+        return OAuthToken.model_validate(
+            data
+        )
+
+    async def set_tokens(
+        self,
+        tokens,
+    ):
+
+        data = (
+            tokens.model_dump(
+                mode="json"
+            )
+        )
+
+        self.redis.set(
+            self.TOKENS_KEY,
+
+            json.dumps(
+                data,
+                ensure_ascii=False,
+            ),
+        )
+
+    async def get_client_info(self):
+
+        raw = self.redis.get(
+            self.CLIENT_INFO_KEY
+        )
+
+        data = (
+            self._decode_value(
+                raw
+            )
+        )
+
+        if not data:
+            return None
+
+        return (
+            OAuthClientInformationFull
+            .model_validate(
+                data
+            )
+        )
+
+    async def set_client_info(
+        self,
+        client_info,
+    ):
+
+        data = (
+            client_info.model_dump(
+                mode="json"
+            )
+        )
+
+        self.redis.set(
+            self.CLIENT_INFO_KEY,
+
+            json.dumps(
+                data,
+                ensure_ascii=False,
+            ),
+        )
+
+
+# =========================================================
+# SELECT TOKEN STORAGE
+# =========================================================
+
+if USE_REDIS:
+
+    token_storage = (
+        RedisTokenStorage(
+            url=(
+                UPSTASH_REDIS_REST_URL
+            ),
+            token=(
+                UPSTASH_REDIS_REST_TOKEN
+            ),
+        )
+    )
+
+else:
+
+    token_storage = (
+        FileTokenStorage(
+            SHAMELA_AUTH_FILE
+        )
+    )
+
+
+# =========================================================
+# REDIS INITIAL SEED
+# =========================================================
+
+_redis_seed_checked = False
+
+
+def _decode_auth_b64():
+    """
+    Decode SHAMELA_AUTH_B64.
+
+    This is used only as an initial bootstrap
+    when Redis does not yet contain OAuth data.
+    """
+
+    if not SHAMELA_AUTH_B64:
+
+        raise RuntimeError(
+            "Redis is empty and "
+            "SHAMELA_AUTH_B64 is not "
+            "available for initial seeding."
+        )
+
+    try:
+
+        decoded_bytes = (
+            base64.b64decode(
+                SHAMELA_AUTH_B64,
+                validate=True,
+            )
+        )
+
+        return json.loads(
+            decoded_bytes.decode(
+                "utf-8"
+            )
+        )
+
+    except Exception as exc:
+
+        raise RuntimeError(
+            "Could not decode "
+            "SHAMELA_AUTH_B64."
+        ) from exc
+
+
+async def ensure_redis_auth_seeded():
+    """
+    Seed Redis only if OAuth information
+    does not already exist there.
+
+    Once Redis has current credentials,
+    Redis becomes the source of truth.
+
+    We intentionally do NOT overwrite Redis
+    with SHAMELA_AUTH_B64 on every restart,
+    because Shamela may rotate refresh tokens.
+    """
+
+    global _redis_seed_checked
+
+    if not USE_REDIS:
+        return
+
+    if _redis_seed_checked:
+        return
+
+
+    existing_tokens = (
+        await token_storage.get_tokens()
+    )
+
+    existing_client_info = (
+        await token_storage
+        .get_client_info()
+    )
+
+
+    if (
+        existing_tokens is not None
+        and existing_client_info is not None
+    ):
+
+        _redis_seed_checked = True
+
+        return
+
+
+    seed_data = (
+        _decode_auth_b64()
+    )
+
+
+    # -----------------------------------------------------
+    # SEED TOKENS
+    # -----------------------------------------------------
+
+    if existing_tokens is None:
+
+        tokens_data = seed_data.get(
+            "tokens"
+        )
+
+        if not tokens_data:
+
+            raise RuntimeError(
+                "SHAMELA_AUTH_B64 does not "
+                "contain OAuth tokens."
+            )
+
+        tokens = (
+            OAuthToken.model_validate(
+                tokens_data
+            )
+        )
+
+        await token_storage.set_tokens(
+            tokens
+        )
+
+
+    # -----------------------------------------------------
+    # SEED CLIENT INFORMATION
+    # -----------------------------------------------------
+
+    if existing_client_info is None:
+
+        client_info_data = (
+            seed_data.get(
+                "client_info"
+            )
+        )
+
+        if not client_info_data:
+
+            raise RuntimeError(
+                "SHAMELA_AUTH_B64 does not "
+                "contain OAuth client "
+                "information."
+            )
+
+        client_info = (
+            OAuthClientInformationFull
+            .model_validate(
+                client_info_data
+            )
+        )
+
+        await (
+            token_storage
+            .set_client_info(
+                client_info
+            )
+        )
+
+
+    _redis_seed_checked = True
+
+
+# =========================================================
+# SAFE STORAGE DIAGNOSTIC
+# =========================================================
+
+async def oauth_storage_status():
+    """
+    Returns only whether credentials exist.
+    It never exposes OAuth token values.
+    """
+
+    tokens = (
+        await token_storage.get_tokens()
+    )
+
+    client_info = (
+        await token_storage
+        .get_client_info()
+    )
+
+    return {
+
+        "storage":
+            (
+                "redis"
+                if USE_REDIS
+                else "local_file"
+            ),
+
+        "tokens_present":
+            tokens is not None,
+
+        "client_info_present":
+            client_info is not None,
+    }
 
 
 # =========================================================
@@ -229,18 +590,27 @@ token_storage = FileTokenStorage(
 
 async def open_browser(url):
     """
-    Used when local authorization is needed.
+    Local:
+        open Shamela authorization page.
+
+    Cloud:
+        interactive localhost OAuth is not
+        possible, so valid Redis credentials
+        must already exist.
     """
 
     if IS_CLOUD:
+
         raise RuntimeError(
-            "Shamela OAuth credentials need "
-            "to be refreshed locally. "
-            "Update SHAMELA_AUTH_B64 afterward."
+            "Shamela OAuth credentials stored "
+            "for the cloud app are not currently "
+            "usable. Re-authorize Shamela locally "
+            "and reseed the cloud OAuth storage."
         )
 
     print(
-        "\nOpening Shamela authorization page...\n"
+        "\nOpening Shamela "
+        "authorization page...\n"
     )
 
     webbrowser.open(
@@ -250,10 +620,11 @@ async def open_browser(url):
 
 async def wait_for_callback():
     """
-    Local OAuth callback.
+    Local OAuth callback handler.
     """
 
     if IS_CLOUD:
+
         raise RuntimeError(
             "Interactive OAuth cannot run "
             "inside Streamlit Cloud."
@@ -265,39 +636,47 @@ async def wait_for_callback():
         "paste it here:\n\n"
     ).strip()
 
+
     parsed = urlparse(
         callback_url
     )
+
 
     params = parse_qs(
         parsed.query
     )
 
+
     code = params.get(
         "code",
-        [None]
+        [None],
     )[0]
+
 
     state = params.get(
         "state",
-        [None]
+        [None],
     )[0]
+
 
     issuer = params.get(
         "iss",
-        [None]
+        [None],
     )[0]
 
+
     if not code:
+
         raise RuntimeError(
             "Authorization code was not "
             "found in callback URL."
         )
 
+
     return AuthorizationCodeResult(
         code=code,
         state=state,
-        iss=issuer
+        iss=issuer,
     )
 
 
@@ -308,25 +687,33 @@ async def wait_for_callback():
 def make_oauth_provider():
 
     return OAuthClientProvider(
-        server_url=SHAMELA_MCP_URL,
 
-        client_metadata=OAuthClientMetadata(
-            client_name=(
-                "Shamela Library Streamlit"
+        server_url=
+            SHAMELA_MCP_URL,
+
+        client_metadata=
+            OAuthClientMetadata(
+
+                client_name=(
+                    "Shamela Library "
+                    "Streamlit"
+                ),
+
+                redirect_uris=[
+                    AnyUrl(
+                        "http://localhost:3000/callback"
+                    )
+                ],
             ),
 
-            redirect_uris=[
-                AnyUrl(
-                    "http://localhost:3000/callback"
-                )
-            ],
-        ),
+        storage=
+            token_storage,
 
-        storage=token_storage,
+        redirect_handler=
+            open_browser,
 
-        redirect_handler=open_browser,
-
-        callback_handler=wait_for_callback,
+        callback_handler=
+            wait_for_callback,
     )
 
 
@@ -338,25 +725,36 @@ def make_oauth_provider():
 async def shamela_session():
     """
     Open one MCP connection and reuse it
-    during the current retrieval request.
+    during the retrieval operation.
     """
 
-    oauth = make_oauth_provider()
+    await ensure_redis_auth_seeded()
+
+
+    oauth = (
+        make_oauth_provider()
+    )
+
 
     async with httpx2.AsyncClient(
         auth=oauth
     ) as http_client:
 
+
         transport = (
             streamable_http_client(
+
                 SHAMELA_MCP_URL,
-                http_client=http_client
+
+                http_client=
+                    http_client,
             )
         )
 
+
         async with Client(
             transport,
-            mode="legacy"
+            mode="legacy",
         ) as client:
 
             yield client
@@ -368,14 +766,14 @@ async def shamela_session():
 
 async def call_shamela(
     tool_name,
-    arguments
+    arguments,
 ):
 
     async with shamela_session() as client:
 
         return await client.call_tool(
             tool_name,
-            arguments
+            arguments,
         )
 
 
@@ -386,13 +784,18 @@ async def call_shamela(
 async def test_shamela_connection():
 
     result = await call_shamela(
+
         "shamela_health",
+
         {
-            "response_format": "json"
-        }
+            "response_format":
+                "json"
+        },
     )
 
-    return result.structured_content
+    return (
+        result.structured_content
+    )
 
 
 # =========================================================
@@ -400,22 +803,25 @@ async def test_shamela_connection():
 # =========================================================
 
 def question_to_search_terms(
-    question
+    question,
 ):
     """
-    Convert an Arabic question into simpler
-    search terms.
+    Convert an Arabic question into
+    simpler search terms.
     """
 
     text = re.sub(
         r"[؟?!،,:؛.\-]",
         " ",
-        question
+        question,
     )
+
 
     words = text.split()
 
+
     stop_words = {
+
         "ما",
         "ماذا",
         "هل",
@@ -433,12 +839,15 @@ def question_to_search_terms(
         "عند",
     }
 
+
     cleaned_words = []
+
 
     for word in words:
 
         if word in stop_words:
             continue
+
 
         if word.startswith(
             (
@@ -454,16 +863,26 @@ def question_to_search_terms(
                 + word[3:]
             )
 
+
         cleaned_words.append(
             word
         )
 
-    search_terms = " ".join(
-        cleaned_words
-    ).strip()
+
+    search_terms = (
+        " ".join(
+            cleaned_words
+        )
+        .strip()
+    )
+
 
     if not search_terms:
-        search_terms = question.strip()
+
+        search_terms = (
+            question.strip()
+        )
+
 
     return search_terms
 
@@ -476,14 +895,14 @@ async def limited_tool_call(
     client,
     semaphore,
     tool_name,
-    arguments
+    arguments,
 ):
 
     async with semaphore:
 
         return await client.call_tool(
             tool_name,
-            arguments
+            arguments,
         )
 
 
@@ -494,81 +913,124 @@ async def limited_tool_call(
 async def build_rag_source(
     client,
     hit,
-    semaphore
+    semaphore,
 ):
     """
-    Get page and citation concurrently.
+    Retrieve page content and citation
+    concurrently.
     """
 
     page_task = limited_tool_call(
+
         client,
         semaphore,
+
         "shamela_get_page",
+
         {
-            "book_id": hit["book_id"],
-            "page_id": hit["page_id"],
-            "response_format": "json"
-        }
+            "book_id":
+                hit["book_id"],
+
+            "page_id":
+                hit["page_id"],
+
+            "response_format":
+                "json",
+        },
     )
 
+
     citation_task = limited_tool_call(
+
         client,
         semaphore,
+
         "shamela_get_citation",
+
         {
-            "book_id": hit["book_id"],
-            "page_id": hit["page_id"],
-            "style": "shamela",
-            "response_format": "json"
-        }
+            "book_id":
+                hit["book_id"],
+
+            "page_id":
+                hit["page_id"],
+
+            "style":
+                "shamela",
+
+            "response_format":
+                "json",
+        },
     )
+
 
     (
         page_result,
-        citation_result
+        citation_result,
     ) = await asyncio.gather(
         page_task,
-        citation_task
+        citation_task,
     )
+
 
     page = (
-        page_result.structured_content
+        page_result
+        .structured_content
         or {}
     )
 
+
     citation = (
-        citation_result.structured_content
+        citation_result
+        .structured_content
         or {}
     )
+
 
     components = citation.get(
         "components",
-        {}
+        {},
     )
+
 
     return {
 
         "book_id":
-            hit.get("book_id"),
+            hit.get(
+                "book_id"
+            ),
 
         "page_id":
-            hit.get("page_id"),
+            hit.get(
+                "page_id"
+            ),
 
         "book_name":
-            components.get("book_name")
-            or hit.get("book_name")
+            components.get(
+                "book_name"
+            )
+            or hit.get(
+                "book_name"
+            )
             or "",
 
         "author_name":
-            components.get("author_name")
-            or hit.get("author_name")
+            components.get(
+                "author_name"
+            )
+            or hit.get(
+                "author_name"
+            )
             or "",
 
         "author_death_year":
-            components.get("death_year"),
+            components.get(
+                "death_year"
+            ),
 
         "category":
-            hit.get("category"),
+            hit.get(
+                "category"
+            ),
 
         "printed_page":
             components.get(
@@ -578,19 +1040,19 @@ async def build_rag_source(
         "body":
             page.get(
                 "body",
-                ""
+                "",
             ),
 
         "footnotes":
             page.get(
                 "foot",
-                ""
+                "",
             ),
 
         "citation":
             citation.get(
                 "formatted",
-                ""
+                "",
             ),
 
         "source_url":
@@ -608,33 +1070,52 @@ async def search_shamela_hits(
     client,
     search_terms,
     distance=5,
-    fetch_limit=8
+    fetch_limit=8,
 ):
     """
     First try proximity search.
-    If nothing is found, use normal page search.
+
+    If no results are found,
+    use ordinary page search.
     """
 
     result = await client.call_tool(
+
         "shamela_search_phrase",
+
         {
-            "query": search_terms,
-            "mode": "near",
-            "distance": distance,
-            "search_in": ["body"],
-            "limit": fetch_limit,
-            "response_format": "json"
-        }
+            "query":
+                search_terms,
+
+            "mode":
+                "near",
+
+            "distance":
+                distance,
+
+            "search_in":
+                ["body"],
+
+            "limit":
+                fetch_limit,
+
+            "response_format":
+                "json",
+        },
     )
 
+
     search_data = (
-        result.structured_content
+        result
+        .structured_content
         or {}
     )
+
 
     if search_data.get(
         "results"
     ):
+
         return search_data
 
 
@@ -643,9 +1124,12 @@ async def search_shamela_hits(
     # -----------------------------------------------------
 
     fallback = await client.call_tool(
+
         "shamela_search_pages",
+
         {
-            "query": search_terms,
+            "query":
+                search_terms,
 
             "options": {
                 "search_in": [
@@ -653,14 +1137,18 @@ async def search_shamela_hits(
                 ]
             },
 
-            "limit": fetch_limit,
+            "limit":
+                fetch_limit,
 
-            "response_format": "json"
-        }
+            "response_format":
+                "json",
+        },
     )
 
+
     return (
-        fallback.structured_content
+        fallback
+        .structured_content
         or {}
     )
 
@@ -673,42 +1161,56 @@ async def retrieve_focused_rag(
     search_terms,
     top_k=3,
     distance=5,
-    fetch_limit=8
+    fetch_limit=8,
 ):
 
     async with shamela_session() as client:
 
+
         search_data = (
             await search_shamela_hits(
+
                 client=client,
-                search_terms=search_terms,
-                distance=distance,
-                fetch_limit=fetch_limit
+
+                search_terms=
+                    search_terms,
+
+                distance=
+                    distance,
+
+                fetch_limit=
+                    fetch_limit,
             )
         )
 
+
         hits = search_data.get(
             "results",
-            []
+            [],
         )
 
 
         # -------------------------------------------------
-        # DEDUPLICATION
+        # DEDUPLICATE BEFORE PAGE FETCH
         # -------------------------------------------------
 
         unique_hits = []
+
         seen_works = set()
 
+
         for hit in hits:
+
 
             book_name = hit.get(
                 "book_name"
             )
 
+
             author_name = hit.get(
                 "author_name"
             )
+
 
             if (
                 book_name
@@ -717,51 +1219,70 @@ async def retrieve_focused_rag(
 
                 work_key = (
                     author_name,
-                    book_name
+                    book_name,
                 )
 
             else:
 
                 work_key = (
                     "book_id",
-                    hit.get("book_id")
+                    hit.get(
+                        "book_id"
+                    ),
                 )
+
 
             if work_key in seen_works:
                 continue
+
 
             seen_works.add(
                 work_key
             )
 
+
             unique_hits.append(
                 hit
             )
+
 
             if (
                 len(unique_hits)
                 >= top_k
             ):
+
                 break
 
 
         # -------------------------------------------------
-        # PARALLEL SOURCE RETRIEVAL
+        # FETCH SELECTED SOURCES
         # -------------------------------------------------
 
         if unique_hits:
 
-            semaphore = asyncio.Semaphore(
-                3
+
+            semaphore = (
+                asyncio.Semaphore(
+                    3
+                )
             )
 
+
             sources = list(
+
                 await asyncio.gather(
+
                     *[
                         build_rag_source(
-                            client=client,
-                            hit=hit,
-                            semaphore=semaphore
+
+                            client=
+                                client,
+
+                            hit=
+                                hit,
+
+                            semaphore=
+                                semaphore,
                         )
 
                         for hit
@@ -770,7 +1291,9 @@ async def retrieve_focused_rag(
                 )
             )
 
+
         else:
+
             sources = []
 
 
@@ -780,10 +1303,12 @@ async def retrieve_focused_rag(
 
     context_parts = []
 
+
     for i, source in enumerate(
         sources,
-        start=1
+        start=1,
     ):
+
 
         source_text = f"""
 SOURCE {i}
@@ -797,13 +1322,16 @@ TEXT:
 {source["body"]}
 """
 
+
         context_parts.append(
             source_text.strip()
         )
 
 
     context = (
+
         "\n\n"
+
         + (
             "\n\n"
             + "=" * 80
@@ -839,7 +1367,7 @@ TEXT:
 async def retrieve_question_rag(
     question,
     top_k=3,
-    distance=5
+    distance=5,
 ):
 
     search_terms = (
@@ -848,15 +1376,26 @@ async def retrieve_question_rag(
         )
     )
 
+
     result = (
         await retrieve_focused_rag(
-            search_terms=search_terms,
-            top_k=top_k,
-            distance=distance
+
+            search_terms=
+                search_terms,
+
+            top_k=
+                top_k,
+
+            distance=
+                distance,
         )
     )
 
-    result["question"] = question
+
+    result[
+        "question"
+    ] = question
+
 
     return result
 
@@ -866,7 +1405,7 @@ async def retrieve_question_rag(
 # =========================================================
 
 def build_rag_prompt(
-    rag_result
+    rag_result,
 ):
 
     return f"""
@@ -907,67 +1446,106 @@ def build_rag_prompt(
 # =========================================================
 
 VERIFICATION_SCHEMA = {
-    "type": "object",
+
+    "type":
+        "object",
 
     "properties": {
 
+
         "claims": {
-            "type": "array",
+
+            "type":
+                "array",
 
             "items": {
-                "type": "object",
+
+                "type":
+                    "object",
 
                 "properties": {
 
+
                     "claim": {
-                        "type": "string"
+
+                        "type":
+                            "string"
                     },
+
 
                     "verdict": {
-                        "type": "string",
+
+                        "type":
+                            "string",
 
                         "enum": [
+
                             "SUPPORTED",
+
                             "PARTIALLY_SUPPORTED",
-                            "UNSUPPORTED"
-                        ]
+
+                            "UNSUPPORTED",
+                        ],
                     },
+
 
                     "sources": {
-                        "type": "array",
+
+                        "type":
+                            "array",
 
                         "items": {
-                            "type": "string"
-                        }
+
+                            "type":
+                                "string"
+                        },
                     },
 
+
                     "reason": {
-                        "type": "string"
+
+                        "type":
+                            "string"
                     },
                 },
 
+
                 "required": [
+
                     "claim",
+
                     "verdict",
+
                     "sources",
-                    "reason"
+
+                    "reason",
                 ],
 
-                "additionalProperties": False,
+
+                "additionalProperties":
+                    False,
             },
         },
 
+
         "corrected_answer": {
-            "type": "string"
+
+            "type":
+                "string"
         },
     },
 
+
     "required": [
+
         "claims",
-        "corrected_answer"
+
+        "corrected_answer",
     ],
 
-    "additionalProperties": False,
+
+    "additionalProperties":
+        False,
 }
 
 
@@ -979,33 +1557,41 @@ async def run_verification_request(
     openai_client,
     model,
     prompt,
-    max_output_tokens
+    max_output_tokens,
 ):
 
     response = await (
         openai_client.responses.create(
-            model=model,
 
-            input=prompt,
+            model=
+                model,
+
+            input=
+                prompt,
 
             text={
+
                 "format": {
-                    "type": "json_schema",
-                    "name": (
-                        "shamela_verification"
-                    ),
-                    "schema": (
-                        VERIFICATION_SCHEMA
-                    ),
-                    "strict": True
+
+                    "type":
+                        "json_schema",
+
+                    "name":
+                        "shamela_verification",
+
+                    "schema":
+                        VERIFICATION_SCHEMA,
+
+                    "strict":
+                        True,
                 }
             },
 
-            max_output_tokens=(
-                max_output_tokens
-            ),
+            max_output_tokens=
+                max_output_tokens,
         )
     )
+
 
     return response
 
@@ -1018,7 +1604,7 @@ async def verify_rag_answer(
     openai_client,
     rag_result,
     draft_answer,
-    model=DEFAULT_MODEL
+    model=DEFAULT_MODEL,
 ):
 
     prompt = f"""
@@ -1084,6 +1670,7 @@ async def verify_rag_answer(
 
     response = (
         await run_verification_request(
+
             openai_client=
                 openai_client,
 
@@ -1100,17 +1687,19 @@ async def verify_rag_answer(
 
 
     # -----------------------------------------------------
-    # RETRY IF INCOMPLETE
+    # RETRY IF OUTPUT WAS INCOMPLETE
     # -----------------------------------------------------
 
     if getattr(
         response,
         "status",
-        None
+        None,
     ) == "incomplete":
+
 
         response = (
             await run_verification_request(
+
                 openai_client=
                     openai_client,
 
@@ -1127,18 +1716,19 @@ async def verify_rag_answer(
 
 
     # -----------------------------------------------------
-    # VERIFY COMPLETION
+    # CHECK STATUS
     # -----------------------------------------------------
 
     status = getattr(
         response,
         "status",
-        None
+        None,
     )
+
 
     if status not in (
         None,
-        "completed"
+        "completed",
     ):
 
         raise RuntimeError(
@@ -1151,6 +1741,7 @@ async def verify_rag_answer(
         response.output_text
         or ""
     ).strip()
+
 
     if not raw_text:
 
@@ -1166,6 +1757,7 @@ async def verify_rag_answer(
             raw_text
         )
 
+
     except json.JSONDecodeError as exc:
 
         raise RuntimeError(
@@ -1179,13 +1771,14 @@ async def verify_rag_answer(
 # =========================================================
 
 def calculate_grounding_score(
-    verified_result
+    verified_result,
 ):
 
     claims = verified_result.get(
         "claims",
-        []
+        [],
     )
+
 
     scores = {
 
@@ -1206,8 +1799,11 @@ def calculate_grounding_score(
 
 
     supported = sum(
+
         1
+
         for claim in claims
+
         if claim.get(
             "verdict"
         ) == "SUPPORTED"
@@ -1215,8 +1811,11 @@ def calculate_grounding_score(
 
 
     partially_supported = sum(
+
         1
+
         for claim in claims
+
         if claim.get(
             "verdict"
         ) == (
@@ -1226,8 +1825,11 @@ def calculate_grounding_score(
 
 
     unsupported = sum(
+
         1
+
         for claim in claims
+
         if claim.get(
             "verdict"
         ) == "UNSUPPORTED"
@@ -1238,19 +1840,24 @@ def calculate_grounding_score(
 
         grounding_score = 0.0
 
+
     else:
 
         score_sum = sum(
+
             scores.get(
+
                 claim.get(
                     "verdict"
                 ),
-                0.0
+
+                0.0,
             )
 
             for claim
             in claims
         )
+
 
         grounding_score = (
             score_sum
@@ -1275,7 +1882,7 @@ def calculate_grounding_score(
         "grounding_score":
             round(
                 grounding_score,
-                3
+                3,
             ),
     }
 
@@ -1289,10 +1896,11 @@ async def shamela_rag(
     top_k=3,
     distance=5,
     model=DEFAULT_MODEL,
-    progress_callback=None
+    progress_callback=None,
 ):
 
     timings = {}
+
 
     total_start = (
         time.perf_counter()
@@ -1305,14 +1913,14 @@ async def shamela_rag(
 
     def progress(
         stage,
-        message
+        message,
     ):
 
         if progress_callback:
 
             progress_callback(
                 stage,
-                message
+                message,
             )
 
 
@@ -1322,8 +1930,9 @@ async def shamela_rag(
 
     progress(
         "search",
-        "🔍 البحث في فهرس المكتبة الشاملة..."
+        "🔍 البحث في فهرس المكتبة الشاملة...",
     )
+
 
     retrieval_start = (
         time.perf_counter()
@@ -1332,9 +1941,15 @@ async def shamela_rag(
 
     rag_result = (
         await retrieve_question_rag(
-            question=question,
-            top_k=top_k,
-            distance=distance
+
+            question=
+                question,
+
+            top_k=
+                top_k,
+
+            distance=
+                distance,
         )
     )
 
@@ -1342,19 +1957,22 @@ async def shamela_rag(
     timings[
         "retrieval_seconds"
     ] = round(
+
         time.perf_counter()
         - retrieval_start,
-        2
+
+        2,
     )
 
 
     progress(
         "sources",
+
         (
             "📚 تم العثور على "
             f'{len(rag_result["sources"])} '
             "مصادر مناسبة."
-        )
+        ),
     )
 
 
@@ -1366,16 +1984,23 @@ async def shamela_rag(
         "sources"
     ]:
 
+
         final_answer = (
+
             "لم يتم العثور على مصادر كافية "
             "في نتائج البحث للإجابة عن السؤال."
         )
 
+
         verification = {
-            "claims": [],
+
+            "claims":
+                [],
+
             "corrected_answer":
-                final_answer
+                final_answer,
         }
+
 
         metrics = (
             calculate_grounding_score(
@@ -1383,18 +2008,23 @@ async def shamela_rag(
             )
         )
 
+
         timings[
             "total_seconds"
         ] = round(
+
             time.perf_counter()
             - total_start,
-            2
+
+            2,
         )
+
 
         progress(
             "complete",
-            "✅ اكتمل البحث."
+            "✅ اكتمل البحث.",
         )
+
 
         return {
 
@@ -1427,7 +2057,7 @@ async def shamela_rag(
 
 
     # =====================================================
-    # 2. BUILD PROMPT
+    # 2. BUILD ANSWER PROMPT
     # =====================================================
 
     prompt = build_rag_prompt(
@@ -1446,14 +2076,18 @@ async def shamela_rag(
 
     try:
 
+
         # =================================================
         # 3. GENERATE DRAFT
         # =================================================
 
         progress(
+
             "generation",
-            "✍️ صياغة الإجابة من المصادر المسترجعة..."
+
+            "✍️ صياغة الإجابة من المصادر المسترجعة...",
         )
+
 
         generation_start = (
             time.perf_counter()
@@ -1462,11 +2096,15 @@ async def shamela_rag(
 
         draft_response = (
             await openai_client.responses.create(
-                model=model,
 
-                input=prompt,
+                model=
+                    model,
 
-                max_output_tokens=1200
+                input=
+                    prompt,
+
+                max_output_tokens=
+                    1200,
             )
         )
 
@@ -1480,9 +2118,11 @@ async def shamela_rag(
         timings[
             "generation_seconds"
         ] = round(
+
             time.perf_counter()
             - generation_start,
-            2
+
+            2,
         )
 
 
@@ -1491,9 +2131,12 @@ async def shamela_rag(
         # =================================================
 
         progress(
+
             "verification",
-            "🛡 التحقق من الادعاءات ومطابقتها بالمصادر..."
+
+            "🛡 التحقق من الادعاءات ومطابقتها بالمصادر...",
         )
+
 
         verification_start = (
             time.perf_counter()
@@ -1502,6 +2145,7 @@ async def shamela_rag(
 
         verification = (
             await verify_rag_answer(
+
                 openai_client=
                     openai_client,
 
@@ -1512,7 +2156,7 @@ async def shamela_rag(
                     draft_answer,
 
                 model=
-                    model
+                    model,
             )
         )
 
@@ -1520,9 +2164,11 @@ async def shamela_rag(
         timings[
             "verification_seconds"
         ] = round(
+
             time.perf_counter()
             - verification_start,
-            2
+
+            2,
         )
 
 
@@ -1549,15 +2195,17 @@ async def shamela_rag(
     timings[
         "total_seconds"
     ] = round(
+
         time.perf_counter()
         - total_start,
-        2
+
+        2,
     )
 
 
     progress(
         "complete",
-        "✅ اكتمل البحث والتحقق."
+        "✅ اكتمل البحث والتحقق.",
     )
 
 
@@ -1592,7 +2240,7 @@ async def shamela_rag(
         "final_answer":
             verification.get(
                 "corrected_answer",
-                draft_answer
+                draft_answer,
             ),
 
         "timings":

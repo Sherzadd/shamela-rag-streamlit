@@ -4,3 +4,4 @@ mcp==2.3.0
 httpx2==2.13.1
 python-dotenv
 pydantic
+upstash-redis
