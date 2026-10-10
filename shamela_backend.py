@@ -90,37 +90,32 @@ IS_CLOUD = bool(
 
 def initialize_cloud_auth():
     """
-    Local:
-        Uses .shamela_auth.json.
+    On Streamlit Cloud, always initialize the local
+    OAuth file from the SHAMELA_AUTH_B64 secret.
 
-    Streamlit Cloud:
-        Recreates .shamela_auth.json from
-        SHAMELA_AUTH_B64.
+    Locally, keep using the existing .shamela_auth.json.
     """
+
+    if SHAMELA_AUTH_B64:
+        try:
+            auth_bytes = base64.b64decode(
+                SHAMELA_AUTH_B64
+            )
+
+            SHAMELA_AUTH_FILE.write_bytes(
+                auth_bytes
+            )
+
+            return
+
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not initialize Shamela "
+                "authentication from SHAMELA_AUTH_B64."
+            ) from exc
 
     if SHAMELA_AUTH_FILE.exists():
         return
-
-    if not SHAMELA_AUTH_B64:
-        return
-
-    try:
-        auth_bytes = base64.b64decode(
-            SHAMELA_AUTH_B64
-        )
-
-        SHAMELA_AUTH_FILE.write_bytes(
-            auth_bytes
-        )
-
-    except Exception as exc:
-        raise RuntimeError(
-            "Could not initialize "
-            "Shamela authentication."
-        ) from exc
-
-
-initialize_cloud_auth()
 
 
 # =========================================================
