@@ -7,10 +7,6 @@ import streamlit as st
 from shamela_backend import shamela_rag
 
 
-# =========================================================
-# PAGE CONFIGURATION
-# =========================================================
-
 st.set_page_config(
     page_title="الباحث في المكتبة الشاملة",
     page_icon="📚",
@@ -19,17 +15,11 @@ st.set_page_config(
 )
 
 
-# =========================================================
-# HELPERS
-# =========================================================
-
-def safe_text(text):
-    """Safely render retrieved/model text inside HTML."""
-    return html.escape(str(text or "")).replace("\n", "<br>")
+def safe_text(value):
+    return html.escape(str(value or "")).replace("\n", "<br>")
 
 
 def extract_url(value):
-    """Extract a normal URL from Shamela's source_url field."""
     if not value:
         return None
 
@@ -37,30 +27,14 @@ def extract_url(value):
     return match.group(0) if match else None
 
 
-# =========================================================
-# CSS
-# =========================================================
-
 st.html(
     """
     <style>
 
-    /* =====================================================
-       GLOBAL PAGE
-    ===================================================== */
-
     .stApp {
         background:
-            radial-gradient(
-                circle at top right,
-                rgba(37, 99, 235, 0.07),
-                transparent 30%
-            ),
-            radial-gradient(
-                circle at bottom left,
-                rgba(16, 185, 129, 0.05),
-                transparent 28%
-            ),
+            radial-gradient(circle at top right, rgba(37,99,235,.07), transparent 30%),
+            radial-gradient(circle at bottom left, rgba(16,185,129,.05), transparent 28%),
             #f8fafc;
 
         font-family:
@@ -77,11 +51,6 @@ st.html(
         padding-bottom: 3.5rem;
     }
 
-
-    /* =====================================================
-       HERO
-    ===================================================== */
-
     .hero {
         text-align: center;
         padding: 1.2rem 1rem 1.4rem;
@@ -89,8 +58,7 @@ st.html(
 
     .hero-icon {
         font-size: 3rem;
-        line-height: 1;
-        margin-bottom: 0.5rem;
+        margin-bottom: .5rem;
     }
 
     .hero-title {
@@ -110,9 +78,9 @@ st.html(
         direction: rtl;
         text-align: center;
 
-        max-width: 700px;
+        max-width: 760px;
 
-        margin: 0.7rem auto 0;
+        margin: .7rem auto 0;
 
         color: #64748b !important;
         -webkit-text-fill-color: #64748b !important;
@@ -120,11 +88,6 @@ st.html(
         font-size: 1.05rem;
         line-height: 1.9;
     }
-
-
-    /* =====================================================
-       SEARCH PANEL
-    ===================================================== */
 
     .search-title {
         direction: rtl;
@@ -136,25 +99,25 @@ st.html(
         font-size: 1.15rem;
         font-weight: 750;
 
-        margin-bottom: 0.6rem;
+        margin-bottom: .6rem;
     }
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        background: rgba(255, 255, 255, 0.9);
+        background: rgba(255,255,255,.94);
 
         border-radius: 20px !important;
         border: 1px solid #e2e8f0 !important;
 
         box-shadow:
             0 8px 28px
-            rgba(15, 23, 42, 0.05);
+            rgba(15,23,42,.05);
     }
 
     div[data-testid="stTextArea"] textarea {
         direction: rtl !important;
         text-align: right !important;
 
-        background: #ffffff !important;
+        background: #fff !important;
 
         color: #0f172a !important;
         -webkit-text-fill-color: #0f172a !important;
@@ -176,26 +139,9 @@ st.html(
     }
 
     div[data-testid="stTextArea"] textarea::placeholder {
-        direction: rtl;
-        text-align: right;
-
         color: #94a3b8 !important;
         -webkit-text-fill-color: #94a3b8 !important;
     }
-
-    div[data-testid="stTextArea"] textarea:focus {
-        border-color: #2563eb !important;
-
-        box-shadow:
-            0 0 0 3px
-            rgba(37, 99, 235, 0.12)
-            !important;
-    }
-
-
-    /* =====================================================
-       SEARCH BUTTON
-    ===================================================== */
 
     div[data-testid="stFormSubmitButton"] button {
         background:
@@ -205,8 +151,8 @@ st.html(
                 #1d4ed8
             ) !important;
 
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+        color: white !important;
+        -webkit-text-fill-color: white !important;
 
         border: none !important;
         border-radius: 13px !important;
@@ -215,27 +161,7 @@ st.html(
 
         font-size: 1.05rem !important;
         font-weight: 750 !important;
-
-        box-shadow:
-            0 5px 14px
-            rgba(37, 99, 235, 0.18);
     }
-
-    div[data-testid="stFormSubmitButton"] button:hover {
-        background:
-            linear-gradient(
-                135deg,
-                #1d4ed8,
-                #1e40af
-            ) !important;
-
-        transform: translateY(-1px);
-    }
-
-
-    /* =====================================================
-       SECTION TITLES
-    ===================================================== */
 
     .section-title {
         direction: rtl;
@@ -248,7 +174,7 @@ st.html(
         font-weight: 800;
 
         margin-top: 1.6rem;
-        margin-bottom: 0.9rem;
+        margin-bottom: .9rem;
     }
 
     .section-description {
@@ -258,22 +184,17 @@ st.html(
         color: #64748b !important;
         -webkit-text-fill-color: #64748b !important;
 
-        font-size: 0.95rem;
+        font-size: .95rem;
         line-height: 1.7;
 
         margin-bottom: 1rem;
     }
 
-
-    /* =====================================================
-       ANSWER CARD
-    ===================================================== */
-
     .answer-card {
         direction: rtl;
         text-align: right;
 
-        background: #ffffff;
+        background: #fff;
 
         color: #1e293b !important;
         -webkit-text-fill-color: #1e293b !important;
@@ -290,15 +211,10 @@ st.html(
 
         box-shadow:
             0 6px 20px
-            rgba(15, 23, 42, 0.05);
+            rgba(15,23,42,.05);
 
         margin-bottom: 1.5rem;
     }
-
-
-    /* =====================================================
-       TRUST / GROUNDING METRICS
-    ===================================================== */
 
     .metrics-grid {
         direction: rtl;
@@ -308,16 +224,16 @@ st.html(
         grid-template-columns:
             repeat(
                 4,
-                minmax(0, 1fr)
+                minmax(0,1fr)
             );
 
         gap: 1rem;
 
-        margin: 0.4rem 0 1rem;
+        margin: .4rem 0 1rem;
     }
 
     .metric-card {
-        background: #ffffff;
+        background: #fff;
 
         border:
             1px solid
@@ -331,19 +247,17 @@ st.html(
 
         box-shadow:
             0 4px 14px
-            rgba(15, 23, 42, 0.05);
+            rgba(15,23,42,.05);
     }
 
     .metric-card-label {
         color: #475569 !important;
         -webkit-text-fill-color: #475569 !important;
 
-        font-size: 0.9rem;
+        font-size: .9rem;
         font-weight: 650;
 
-        margin-bottom: 0.45rem;
-
-        opacity: 1 !important;
+        margin-bottom: .45rem;
     }
 
     .metric-card-value {
@@ -354,8 +268,6 @@ st.html(
         font-weight: 800;
 
         line-height: 1.2;
-
-        opacity: 1 !important;
     }
 
     .metric-supported .metric-card-value {
@@ -373,33 +285,18 @@ st.html(
         -webkit-text-fill-color: #dc2626 !important;
     }
 
-
-    /* =====================================================
-       ARABIC TEXT
-    ===================================================== */
-
-    .arabic {
+    .trust-note {
         direction: rtl;
         text-align: right;
 
-        color: #1e293b !important;
-        -webkit-text-fill-color: #1e293b !important;
+        color: #64748b !important;
+        -webkit-text-fill-color: #64748b !important;
 
-        font-family:
-            "Noto Naskh Arabic",
-            "Segoe UI",
-            Tahoma,
-            Arial,
-            sans-serif;
+        font-size: .88rem;
+        line-height: 1.7;
 
-        font-size: 1.04rem;
-        line-height: 2;
+        margin-top: .6rem;
     }
-
-
-    /* =====================================================
-       SOURCE CARDS
-    ===================================================== */
 
     .source-book {
         direction: rtl;
@@ -411,7 +308,7 @@ st.html(
         font-size: 1.16rem;
         font-weight: 760;
 
-        margin-bottom: 0.8rem;
+        margin-bottom: .8rem;
     }
 
     .source-label {
@@ -435,66 +332,29 @@ st.html(
         color: #334155 !important;
         -webkit-text-fill-color: #334155 !important;
 
-        border-right: 4px solid #2563eb;
+        border-right:
+            4px solid
+            #2563eb;
 
         border-radius: 10px;
 
         padding: 1.2rem;
-        margin-top: 0.8rem;
+        margin-top: .8rem;
 
         font-size: 1rem;
         line-height: 2.05;
     }
 
+    .arabic {
+        direction: rtl;
+        text-align: right;
 
-    /* =====================================================
-       VERDICT BADGES
-    ===================================================== */
+        color: #1e293b !important;
+        -webkit-text-fill-color: #1e293b !important;
 
-    .badge-supported,
-    .badge-partial,
-    .badge-unsupported {
-        display: inline-block;
-
-        border-radius: 999px;
-
-        padding: 0.3rem 0.8rem;
-
-        font-size: 0.86rem;
-        font-weight: 750;
+        font-size: 1.04rem;
+        line-height: 2;
     }
-
-    .badge-supported {
-        background: #dcfce7;
-
-        color: #166534 !important;
-        -webkit-text-fill-color: #166534 !important;
-
-        border: 1px solid #bbf7d0;
-    }
-
-    .badge-partial {
-        background: #fef3c7;
-
-        color: #92400e !important;
-        -webkit-text-fill-color: #92400e !important;
-
-        border: 1px solid #fde68a;
-    }
-
-    .badge-unsupported {
-        background: #fee2e2;
-
-        color: #991b1b !important;
-        -webkit-text-fill-color: #991b1b !important;
-
-        border: 1px solid #fecaca;
-    }
-
-
-    /* =====================================================
-       CLAIMS
-    ===================================================== */
 
     .claim-text {
         direction: rtl;
@@ -506,31 +366,54 @@ st.html(
         font-size: 1rem;
         line-height: 1.9;
 
-        margin-top: 0.8rem;
+        margin-top: .8rem;
     }
 
+    .badge-supported,
+    .badge-partial,
+    .badge-unsupported {
+        display: inline-block;
 
-    /* =====================================================
-       TRUST NOTE
-    ===================================================== */
+        border-radius: 999px;
 
-    .trust-note {
-        direction: rtl;
-        text-align: right;
+        padding: .3rem .8rem;
 
-        color: #64748b !important;
-        -webkit-text-fill-color: #64748b !important;
-
-        font-size: 0.88rem;
-        line-height: 1.7;
-
-        margin-top: 0.6rem;
+        font-size: .86rem;
+        font-weight: 750;
     }
 
+    .badge-supported {
+        background: #dcfce7;
 
-    /* =====================================================
-       FOOTER
-    ===================================================== */
+        color: #166534 !important;
+        -webkit-text-fill-color: #166534 !important;
+
+        border:
+            1px solid
+            #bbf7d0;
+    }
+
+    .badge-partial {
+        background: #fef3c7;
+
+        color: #92400e !important;
+        -webkit-text-fill-color: #92400e !important;
+
+        border:
+            1px solid
+            #fde68a;
+    }
+
+    .badge-unsupported {
+        background: #fee2e2;
+
+        color: #991b1b !important;
+        -webkit-text-fill-color: #991b1b !important;
+
+        border:
+            1px solid
+            #fecaca;
+    }
 
     .custom-footer {
         text-align: center;
@@ -538,7 +421,7 @@ st.html(
         color: #94a3b8 !important;
         -webkit-text-fill-color: #94a3b8 !important;
 
-        font-size: 0.82rem;
+        font-size: .82rem;
 
         margin-top: 3rem;
 
@@ -549,11 +432,6 @@ st.html(
             #e2e8f0;
     }
 
-
-    /* =====================================================
-       CLEAN STREAMLIT UI
-    ===================================================== */
-
     #MainMenu {
         visibility: hidden;
     }
@@ -562,48 +440,14 @@ st.html(
         visibility: hidden;
     }
 
-    header[data-testid="stHeader"] {
-        background: transparent;
-    }
-
-    div[data-testid="stToolbar"] {
-        visibility: hidden;
-        height: 0;
-    }
-
-    div[data-testid="stDecoration"] {
-        display: none;
-    }
-
-
-    /* =====================================================
-       MOBILE RESPONSIVE DESIGN
-    ===================================================== */
-
     @media (max-width: 768px) {
-
-        .block-container {
-            padding-left: 1rem;
-            padding-right: 1rem;
-            padding-top: 0.5rem;
-        }
-
-        .hero {
-            padding-top: 0.7rem;
-        }
-
-        .hero-icon {
-            font-size: 2.4rem;
-        }
 
         .hero-title {
             font-size: 2rem;
-            line-height: 1.4;
         }
 
         .hero-subtitle {
-            font-size: 0.98rem;
-            line-height: 1.9;
+            font-size: .98rem;
         }
 
         .answer-card {
@@ -611,22 +455,12 @@ st.html(
             font-size: 1.05rem;
         }
 
-        .section-title {
-            font-size: 1.25rem;
-        }
-
         .metrics-grid {
             grid-template-columns:
                 repeat(
                     2,
-                    minmax(0, 1fr)
+                    minmax(0,1fr)
                 );
-
-            gap: 0.75rem;
-        }
-
-        .metric-card {
-            padding: 0.9rem 0.6rem;
         }
 
         .metric-card-value {
@@ -639,17 +473,9 @@ st.html(
 )
 
 
-# =========================================================
-# SESSION STATE
-# =========================================================
-
 if "result" not in st.session_state:
     st.session_state.result = None
 
-
-# =========================================================
-# HERO
-# =========================================================
 
 st.html(
     """
@@ -673,10 +499,6 @@ st.html(
     """
 )
 
-
-# =========================================================
-# SEARCH AREA
-# =========================================================
 
 with st.container(border=True):
 
@@ -703,10 +525,6 @@ with st.container(border=True):
         )
 
 
-# =========================================================
-# RUN RAG
-# =========================================================
-
 if submitted:
 
     if not question.strip():
@@ -720,7 +538,7 @@ if submitted:
         st.session_state.result = None
 
         status_box = st.status(
-            "بدء البحث...",
+            "🔍 البحث في فهرس المكتبة الشاملة...",
             expanded=True,
         )
 
@@ -728,9 +546,10 @@ if submitted:
             stage,
             message,
         ):
-            status_box.write(
-                message
-            )
+            if message:
+                status_box.write(
+                    message
+                )
 
         try:
 
@@ -780,18 +599,68 @@ if submitted:
                 )
 
 
-# =========================================================
-# DISPLAY RESULTS
-# =========================================================
-
 result = st.session_state.result
 
 
 if result:
 
-    metrics = result[
-        "grounding_metrics"
-    ]
+    metrics = (
+        result.get(
+            "grounding_metrics",
+            {},
+        )
+        or {}
+    )
+
+    grounding_score = float(
+        metrics.get(
+            "grounding_score",
+            0,
+        )
+        or 0
+    )
+
+    grounding_score = max(
+        0.0,
+        min(
+            1.0,
+            grounding_score,
+        ),
+    )
+
+    supported = int(
+        metrics.get(
+            "supported",
+            0,
+        )
+        or 0
+    )
+
+    partially_supported = int(
+        metrics.get(
+            "partially_supported",
+            0,
+        )
+        or 0
+    )
+
+    unsupported = int(
+        metrics.get(
+            "unsupported",
+            0,
+        )
+        or 0
+    )
+
+    total_claims = int(
+        metrics.get(
+            "total_claims",
+            supported
+            + partially_supported
+            + unsupported,
+        )
+        or 0
+    )
 
 
     # =====================================================
@@ -806,16 +675,19 @@ if result:
         """
     )
 
-    final_answer = safe_text(
-        result[
-            "final_answer"
-        ]
-    )
-
     st.html(
         f"""
         <div class="answer-card">
-            {final_answer}
+
+            {
+                safe_text(
+                    result.get(
+                        "final_answer",
+                        "",
+                    )
+                )
+            }
+
         </div>
         """
     )
@@ -834,15 +706,14 @@ if result:
     )
 
     grounding_percent = (
-        metrics[
-            "grounding_score"
-        ]
+        grounding_score
         * 100
     )
 
     st.html(
         f"""
         <div class="metrics-grid">
+
 
             <div class="metric-card">
 
@@ -867,7 +738,7 @@ if result:
                 </div>
 
                 <div class="metric-card-value">
-                    {metrics["supported"]}
+                    {supported}
                 </div>
 
             </div>
@@ -883,7 +754,7 @@ if result:
                 </div>
 
                 <div class="metric-card-value">
-                    {metrics["partially_supported"]}
+                    {partially_supported}
                 </div>
 
             </div>
@@ -899,28 +770,29 @@ if result:
                 </div>
 
                 <div class="metric-card-value">
-                    {metrics["unsupported"]}
+                    {unsupported}
                 </div>
 
             </div>
+
 
         </div>
         """
     )
 
     st.progress(
-        metrics[
-            "grounding_score"
-        ]
+        grounding_score
     )
 
     st.html(
         """
         <div class="trust-note">
+
             درجة التوثيق تعبّر عن مدى دعم
             المصادر المسترجعة للادعاءات الواردة
             في الإجابة، ولا تعني نسبة الصحة
             المطلقة للحكم.
+
         </div>
         """
     )
@@ -949,19 +821,31 @@ if result:
 
     with sources_tab:
 
-        sources = result[
-            "sources"
-        ]
+        sources = (
+            result.get(
+                "sources",
+                [],
+            )
+            or []
+        )
 
         st.html(
             f"""
             <div class="section-description">
+
                 تم الاستناد إلى
                 {len(sources)}
                 مصدر/مصادر من المكتبة الشاملة.
+
             </div>
             """
         )
+
+        if not sources:
+
+            st.info(
+                "لم يتم العثور على مصادر لعرضها."
+            )
 
         for index, source in enumerate(
             sources,
@@ -1013,7 +897,13 @@ if result:
                 st.html(
                     f"""
                     <div class="source-book">
-                        {safe_text(book_name)}
+
+                        {
+                            safe_text(
+                                book_name
+                            )
+                        }
+
                     </div>
                     """
                 )
@@ -1070,6 +960,7 @@ if result:
                 st.html(
                     f"""
                     <div class="source-text">
+
                         {
                             safe_text(
                                 source.get(
@@ -1078,6 +969,7 @@ if result:
                                 )
                             )
                         }
+
                     </div>
                     """
                 )
@@ -1097,11 +989,13 @@ if result:
                         st.html(
                             f"""
                             <div class="arabic">
+
                                 {
                                     safe_text(
                                         footnotes
                                     )
                                 }
+
                             </div>
                             """
                         )
@@ -1113,31 +1007,48 @@ if result:
 
     with verification_tab:
 
-        claims = result[
-            "verification"
-        ][
-            "claims"
-        ]
+        verification = (
+            result.get(
+                "verification",
+                {},
+            )
+            or {}
+        )
+
+        claims = (
+            verification.get(
+                "claims",
+                [],
+            )
+            or []
+        )
 
         st.html(
             f"""
             <div class="section-description">
+
                 تم فحص
                 {len(claims)}
                 ادعاءً في الإجابة النهائية.
+
             </div>
             """
         )
 
-        for index, claim in enumerate(
-            claims,
-            start=1,
-        ):
+        if not claims:
 
-            verdict = claim.get(
-                "verdict",
-                "UNSUPPORTED",
+            st.info(
+                "لا توجد ادعاءات تفصيلية لعرضها."
             )
+
+        for claim in claims:
+
+            verdict = str(
+                claim.get(
+                    "verdict",
+                    "UNSUPPORTED",
+                )
+            ).upper()
 
             if verdict == "SUPPORTED":
 
@@ -1178,8 +1089,8 @@ if result:
                 st.html(
                     f"""
                     <div style="
-                        direction: rtl;
-                        text-align: right;
+                        direction:rtl;
+                        text-align:right;
                     ">
 
                         <span class="{badge_class}">
@@ -1241,6 +1152,7 @@ if result:
                         "sources",
                         [],
                     )
+                    or []
                 )
 
                 if claim_sources:
@@ -1249,7 +1161,9 @@ if result:
                         "المصادر: "
                         +
                         ", ".join(
-                            claim_sources
+                            str(item)
+                            for item
+                            in claim_sources
                         )
                     )
 
@@ -1267,32 +1181,31 @@ if result:
 
         st.write(
             "**عبارة البحث المستخدمة:**",
-            result[
-                "search_terms"
-            ],
+            result.get(
+                "search_terms",
+                "",
+            ),
         )
 
         st.write(
             "**عدد المصادر المسترجعة:**",
             len(
-                result[
-                    "sources"
-                ]
+                result.get(
+                    "sources",
+                    [],
+                )
+                or []
             ),
         )
 
         st.write(
             "**عدد الادعاءات التي تم فحصها:**",
-            metrics[
-                "total_claims"
-            ],
+            total_claims,
         )
 
         st.write(
             "**Grounding score:**",
-            metrics[
-                "grounding_score"
-            ],
+            grounding_score,
         )
 
 
@@ -1300,17 +1213,18 @@ if result:
         # PERFORMANCE TIMINGS
         # =================================================
 
-        if result.get(
-            "timings"
-        ):
+        timings = (
+            result.get(
+                "timings"
+            )
+            or {}
+        )
+
+        if timings:
 
             st.markdown(
                 "### ⏱ زمن التنفيذ"
             )
-
-            timings = result[
-                "timings"
-            ]
 
             st.write(
                 "**استرجاع المصادر:**",
@@ -1344,21 +1258,20 @@ if result:
             st.html(
                 f"""
                 <div class="arabic">
+
                     {
                         safe_text(
-                            result[
-                                "draft_answer"
-                            ]
+                            result.get(
+                                "draft_answer",
+                                "",
+                            )
                         )
                     }
+
                 </div>
                 """
             )
 
-
-# =========================================================
-# FOOTER
-# =========================================================
 
 st.html(
     """
