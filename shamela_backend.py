@@ -50,6 +50,16 @@ from mcp.client.auth import (
 
 )
 
+from mcp.client.auth.utils import (
+    build_oauth_authorization_server_metadata_discovery_urls,
+    build_protected_resource_metadata_discovery_urls,
+    create_oauth_metadata_request,
+    handle_auth_metadata_response,
+    handle_protected_resource_response,
+    issuers_match,
+    validate_metadata_issuer,
+)
+
 
 from mcp.client.streamable_http import (
 
@@ -64,7 +74,11 @@ from mcp.shared.auth import (
 
     OAuthClientMetadata,
 
+    OAuthMetadata,
+
     OAuthToken,
+
+    ProtectedResourceMetadata,
 
 )
 
@@ -384,11 +398,21 @@ async def ensure_auth_storage_seeded():
             )
             await token_storage.set_tokens(tokens)
 
-            # The backup does not reliably contain an absolute issue time.
-            # Force one refresh on the first cloud request. A successful
-            # refresh will immediately save a new timestamp and any rotated
-            # refresh token back to Redis.
-            await token_storage.set_token_saved_at(0.0)
+            # Preserve the local save time when the backup contains it.
+            # A freshly-authorized local file therefore remains fresh after
+            # the first cloud bootstrap. Older backups without a timestamp
+            # are marked unknown so the provider can discover metadata and
+            # refresh through Shamela's real token endpoint before use.
+            seed_saved_at = seed.get("token_saved_at")
+            if seed_saved_at is not None:
+                try:
+                    await token_storage.set_token_saved_at(
+                        float(seed_saved_at)
+                    )
+                except (TypeError, ValueError):
+                    await token_storage.set_token_saved_at(0.0)
+            else:
+                await token_storage.set_token_saved_at(0.0)
 
         if client_info is None:
             raw_client_info = seed.get(
@@ -496,23 +520,51 @@ async def wait_for_callback():
 
 class PersistentOAuthClientProvider(OAuthClientProvider):
     """
-    Restore an absolute token expiry after the MCP SDK reloads credentials.
+    OAuth provider that restores token expiry after a restart and seeds the
+    public Shamela OAuth metadata before the MCP SDK attempts a refresh.
 
-    mcp==2.3.0 loads current_tokens and client_info from TokenStorage, but
-    its base _initialize() does not reconstruct token_expiry_time. With a
-    missing expiry timestamp the SDK treats an old access token as valid,
-    sends it, receives 401, and falls directly into interactive OAuth.
+    Shamela publishes:
+      issuer: https://shamela.link/api/auth
+      authorization endpoint: https://shamela.link/api/auth/oauth2/authorize
+      token endpoint: https://shamela.link/api/auth/oauth2/token
+      registration endpoint: https://shamela.link/api/auth/oauth2/register
 
-    This subclass reconstructs the expiry from the time our storage saved
-    the token. If the age is unknown, it intentionally marks the token as
-    expired so the SDK uses the refresh token first.
+    Seeding this metadata prevents mcp==2.3.0 from falling back to the
+    resource-origin /token endpoint (https://shamela.link/token), which
+    returns 404 after a process restart.
     """
 
     async def _initialize(self):
         await super()._initialize()
 
-        tokens = self.context.current_tokens
+        # These are public OAuth metadata values advertised by Shamela's
+        # RFC 9728 / RFC 8414 well-known endpoints.  Restore them explicitly
+        # because mcp==2.3.0 does not persist discovered metadata.
+        self.context.auth_server_url = "https://shamela.link/api/auth"
 
+        self.context.protected_resource_metadata = (
+            ProtectedResourceMetadata(
+                resource="https://shamela.link/mcp",
+                authorization_servers=[
+                    "https://shamela.link/api/auth"
+                ],
+            )
+        )
+
+        self.context.oauth_metadata = OAuthMetadata(
+            issuer="https://shamela.link/api/auth",
+            authorization_endpoint=(
+                "https://shamela.link/api/auth/oauth2/authorize"
+            ),
+            token_endpoint=(
+                "https://shamela.link/api/auth/oauth2/token"
+            ),
+            registration_endpoint=(
+                "https://shamela.link/api/auth/oauth2/register"
+            ),
+        )
+
+        tokens = self.context.current_tokens
         if not tokens:
             return
 
@@ -523,7 +575,6 @@ class PersistentOAuthClientProvider(OAuthClientProvider):
         )
 
         saved_at = None
-
         if getter is not None:
             try:
                 saved_at = await getter()
@@ -536,31 +587,33 @@ class PersistentOAuthClientProvider(OAuthClientProvider):
             None,
         )
 
-        # If we cannot prove the access token is still valid, refresh it.
-        if expires_in is None or saved_at is None:
-            if self.context.can_refresh_token():
-                self.context.token_expiry_time = (
-                    time.time() - 1.0
-                )
+        # If Shamela did not provide an expiry, keep the SDK's normal behavior.
+        if expires_in is None:
             return
 
         try:
             expires_in = float(expires_in)
-            saved_at = float(saved_at)
+            saved_at = (
+                float(saved_at)
+                if saved_at is not None
+                else None
+            )
         except (TypeError, ValueError):
-            if self.context.can_refresh_token():
-                self.context.token_expiry_time = (
-                    time.time() - 1.0
-                )
             return
 
-        # Keep a small safety margin to avoid sending a token that expires
-        # while the MCP request is in flight.
-        self.context.token_expiry_time = (
-            saved_at
-            + expires_in
-            - 60.0
-        )
+        # Reconstruct the absolute expiry time from persistent storage.
+        # Use a 60-second margin so a token is refreshed before it expires.
+        if saved_at is not None and saved_at > 0:
+            self.context.token_expiry_time = (
+                saved_at + expires_in - 60.0
+            )
+            return
+
+        # Older/bootstrap records may not have a meaningful save time.  Since
+        # the real token endpoint is already installed above, forcing one
+        # refresh is now safe and lets Redis receive a fresh token + timestamp.
+        if self.context.can_refresh_token():
+            self.context.token_expiry_time = time.time() - 1.0
 
 
 # =========================================================
