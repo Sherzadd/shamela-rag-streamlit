@@ -24,32 +24,17 @@ st.set_page_config(
 # =========================================================
 
 def safe_text(text):
-    """
-    Safely display retrieved/model text inside HTML.
-    """
-    return html.escape(
-        str(text or "")
-    ).replace("\n", "<br>")
+    """Safely render retrieved/model text inside HTML."""
+    return html.escape(str(text or "")).replace("\n", "<br>")
 
 
 def extract_url(value):
-    """
-    Extract a normal URL from Shamela's source_url field.
-    """
+    """Extract a normal URL from Shamela's source_url field."""
     if not value:
         return None
 
-    value = str(value)
-
-    match = re.search(
-        r"https?://[^\s)]+",
-        value
-    )
-
-    if match:
-        return match.group(0)
-
-    return None
+    match = re.search(r"https?://[^\s)]+", str(value))
+    return match.group(0) if match else None
 
 
 # =========================================================
@@ -99,7 +84,7 @@ st.html(
 
     .hero {
         text-align: center;
-        padding: 1.2rem 1rem 1.4rem 1rem;
+        padding: 1.2rem 1rem 1.4rem;
     }
 
     .hero-icon {
@@ -111,18 +96,27 @@ st.html(
     .hero-title {
         direction: rtl;
         text-align: center;
-        color: #0f172a;
+
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+
         font-size: 2.65rem;
         font-weight: 800;
+
         margin: 0;
     }
 
     .hero-subtitle {
         direction: rtl;
         text-align: center;
+
         max-width: 700px;
-        margin: 0.7rem auto 0 auto;
-        color: #64748b;
+
+        margin: 0.7rem auto 0;
+
+        color: #64748b !important;
+        -webkit-text-fill-color: #64748b !important;
+
         font-size: 1.05rem;
         line-height: 1.9;
     }
@@ -135,14 +129,19 @@ st.html(
     .search-title {
         direction: rtl;
         text-align: right;
-        color: #0f172a;
+
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+
         font-size: 1.15rem;
         font-weight: 750;
+
         margin-bottom: 0.6rem;
     }
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
         background: rgba(255, 255, 255, 0.9);
+
         border-radius: 20px !important;
         border: 1px solid #e2e8f0 !important;
 
@@ -156,7 +155,9 @@ st.html(
         text-align: right !important;
 
         background: #ffffff !important;
+
         color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
 
         border: 1px solid #cbd5e1 !important;
         border-radius: 14px !important;
@@ -177,7 +178,9 @@ st.html(
     div[data-testid="stTextArea"] textarea::placeholder {
         direction: rtl;
         text-align: right;
+
         color: #94a3b8 !important;
+        -webkit-text-fill-color: #94a3b8 !important;
     }
 
     div[data-testid="stTextArea"] textarea:focus {
@@ -203,6 +206,8 @@ st.html(
             ) !important;
 
         color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+
         border: none !important;
         border-radius: 13px !important;
 
@@ -214,10 +219,6 @@ st.html(
         box-shadow:
             0 5px 14px
             rgba(37, 99, 235, 0.18);
-
-        transition:
-            transform 0.15s ease,
-            box-shadow 0.15s ease;
     }
 
     div[data-testid="stFormSubmitButton"] button:hover {
@@ -229,10 +230,6 @@ st.html(
             ) !important;
 
         transform: translateY(-1px);
-
-        box-shadow:
-            0 7px 18px
-            rgba(37, 99, 235, 0.22);
     }
 
 
@@ -244,10 +241,11 @@ st.html(
         direction: rtl;
         text-align: right;
 
-        color: #0f172a;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
 
         font-size: 1.45rem;
-        font-weight: 780;
+        font-weight: 800;
 
         margin-top: 1.6rem;
         margin-bottom: 0.9rem;
@@ -257,7 +255,8 @@ st.html(
         direction: rtl;
         text-align: right;
 
-        color: #64748b;
+        color: #64748b !important;
+        -webkit-text-fill-color: #64748b !important;
 
         font-size: 0.95rem;
         line-height: 1.7;
@@ -275,7 +274,9 @@ st.html(
         text-align: right;
 
         background: #ffffff;
-        color: #1e293b;
+
+        color: #1e293b !important;
+        -webkit-text-fill-color: #1e293b !important;
 
         border: 1px solid #e2e8f0;
         border-right: 5px solid #2563eb;
@@ -296,24 +297,80 @@ st.html(
 
 
     /* =====================================================
-       METRICS
+       TRUST / GROUNDING METRICS
     ===================================================== */
 
-    div[data-testid="stMetric"] {
-        background: #ffffff;
+    .metrics-grid {
+        direction: rtl;
 
-        border: 1px solid #e2e8f0;
-        border-radius: 15px;
+        display: grid;
 
-        padding: 1rem;
+        grid-template-columns:
+            repeat(
+                4,
+                minmax(0, 1fr)
+            );
 
-        box-shadow:
-            0 3px 10px
-            rgba(15, 23, 42, 0.04);
+        gap: 1rem;
+
+        margin: 0.4rem 0 1rem;
     }
 
-    div[data-testid="stMetricLabel"] {
+    .metric-card {
+        background: #ffffff;
+
+        border:
+            1px solid
+            #e2e8f0;
+
+        border-radius: 16px;
+
+        padding: 1.15rem 1rem;
+
+        text-align: center;
+
+        box-shadow:
+            0 4px 14px
+            rgba(15, 23, 42, 0.05);
+    }
+
+    .metric-card-label {
+        color: #475569 !important;
+        -webkit-text-fill-color: #475569 !important;
+
+        font-size: 0.9rem;
         font-weight: 650;
+
+        margin-bottom: 0.45rem;
+
+        opacity: 1 !important;
+    }
+
+    .metric-card-value {
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
+
+        font-size: 1.7rem;
+        font-weight: 800;
+
+        line-height: 1.2;
+
+        opacity: 1 !important;
+    }
+
+    .metric-supported .metric-card-value {
+        color: #15803d !important;
+        -webkit-text-fill-color: #15803d !important;
+    }
+
+    .metric-partial .metric-card-value {
+        color: #b45309 !important;
+        -webkit-text-fill-color: #b45309 !important;
+    }
+
+    .metric-unsupported .metric-card-value {
+        color: #dc2626 !important;
+        -webkit-text-fill-color: #dc2626 !important;
     }
 
 
@@ -325,7 +382,8 @@ st.html(
         direction: rtl;
         text-align: right;
 
-        color: #1e293b;
+        color: #1e293b !important;
+        -webkit-text-fill-color: #1e293b !important;
 
         font-family:
             "Noto Naskh Arabic",
@@ -347,7 +405,8 @@ st.html(
         direction: rtl;
         text-align: right;
 
-        color: #0f172a;
+        color: #0f172a !important;
+        -webkit-text-fill-color: #0f172a !important;
 
         font-size: 1.16rem;
         font-weight: 760;
@@ -360,7 +419,9 @@ st.html(
         text-align: right;
 
         font-weight: 700;
-        color: #475569;
+
+        color: #475569 !important;
+        -webkit-text-fill-color: #475569 !important;
 
         margin-top: 1rem;
     }
@@ -370,9 +431,12 @@ st.html(
         text-align: right;
 
         background: #f8fafc;
-        color: #334155;
+
+        color: #334155 !important;
+        -webkit-text-fill-color: #334155 !important;
 
         border-right: 4px solid #2563eb;
+
         border-radius: 10px;
 
         padding: 1.2rem;
@@ -387,49 +451,44 @@ st.html(
        VERDICT BADGES
     ===================================================== */
 
-    .badge-supported {
-        display: inline-block;
-
-        background: #dcfce7;
-        color: #166534;
-
-        border: 1px solid #bbf7d0;
-        border-radius: 999px;
-
-        padding: 0.3rem 0.8rem;
-
-        font-size: 0.86rem;
-        font-weight: 750;
-    }
-
-    .badge-partial {
-        display: inline-block;
-
-        background: #fef3c7;
-        color: #92400e;
-
-        border: 1px solid #fde68a;
-        border-radius: 999px;
-
-        padding: 0.3rem 0.8rem;
-
-        font-size: 0.86rem;
-        font-weight: 750;
-    }
-
+    .badge-supported,
+    .badge-partial,
     .badge-unsupported {
         display: inline-block;
 
-        background: #fee2e2;
-        color: #991b1b;
-
-        border: 1px solid #fecaca;
         border-radius: 999px;
 
         padding: 0.3rem 0.8rem;
 
         font-size: 0.86rem;
         font-weight: 750;
+    }
+
+    .badge-supported {
+        background: #dcfce7;
+
+        color: #166534 !important;
+        -webkit-text-fill-color: #166534 !important;
+
+        border: 1px solid #bbf7d0;
+    }
+
+    .badge-partial {
+        background: #fef3c7;
+
+        color: #92400e !important;
+        -webkit-text-fill-color: #92400e !important;
+
+        border: 1px solid #fde68a;
+    }
+
+    .badge-unsupported {
+        background: #fee2e2;
+
+        color: #991b1b !important;
+        -webkit-text-fill-color: #991b1b !important;
+
+        border: 1px solid #fecaca;
     }
 
 
@@ -441,7 +500,8 @@ st.html(
         direction: rtl;
         text-align: right;
 
-        color: #1e293b;
+        color: #1e293b !important;
+        -webkit-text-fill-color: #1e293b !important;
 
         font-size: 1rem;
         line-height: 1.9;
@@ -458,7 +518,8 @@ st.html(
         direction: rtl;
         text-align: right;
 
-        color: #64748b;
+        color: #64748b !important;
+        -webkit-text-fill-color: #64748b !important;
 
         font-size: 0.88rem;
         line-height: 1.7;
@@ -474,7 +535,8 @@ st.html(
     .custom-footer {
         text-align: center;
 
-        color: #94a3b8;
+        color: #94a3b8 !important;
+        -webkit-text-fill-color: #94a3b8 !important;
 
         font-size: 0.82rem;
 
@@ -482,7 +544,9 @@ st.html(
 
         padding-top: 1.2rem;
 
-        border-top: 1px solid #e2e8f0;
+        border-top:
+            1px solid
+            #e2e8f0;
     }
 
 
@@ -551,10 +615,23 @@ st.html(
             font-size: 1.25rem;
         }
 
-        div[data-testid="stMetric"] {
-            padding: 0.75rem;
+        .metrics-grid {
+            grid-template-columns:
+                repeat(
+                    2,
+                    minmax(0, 1fr)
+                );
+
+            gap: 0.75rem;
         }
 
+        .metric-card {
+            padding: 0.9rem 0.6rem;
+        }
+
+        .metric-card-value {
+            font-size: 1.4rem;
+        }
     }
 
     </style>
@@ -640,16 +717,20 @@ if submitted:
 
     else:
 
-        # Remove the previous answer while the new query runs
         st.session_state.result = None
 
         status_box = st.status(
             "بدء البحث...",
-            expanded=True
+            expanded=True,
         )
 
-        def update_progress(stage, message):
-            status_box.write(message)
+        def update_progress(
+            stage,
+            message,
+        ):
+            status_box.write(
+                message
+            )
 
         try:
 
@@ -657,24 +738,33 @@ if submitted:
                 shamela_rag(
                     question.strip(),
                     top_k=3,
-                    progress_callback=update_progress
+                    progress_callback=
+                        update_progress,
                 )
             )
 
-            st.session_state.result = result
+            st.session_state.result = (
+                result
+            )
 
             status_box.update(
-                label="✅ اكتمل البحث والتحقق",
-                state="complete",
-                expanded=False
+                label=
+                    "✅ اكتمل البحث والتحقق",
+                state=
+                    "complete",
+                expanded=
+                    False,
             )
 
         except Exception as error:
 
             status_box.update(
-                label="حدث خطأ أثناء البحث",
-                state="error",
-                expanded=True
+                label=
+                    "حدث خطأ أثناء البحث",
+                state=
+                    "error",
+                expanded=
+                    True,
             )
 
             st.error(
@@ -684,7 +774,10 @@ if submitted:
             with st.expander(
                 "عرض تفاصيل الخطأ"
             ):
-                st.exception(error)
+
+                st.exception(
+                    error
+                )
 
 
 # =========================================================
@@ -714,7 +807,9 @@ if result:
     )
 
     final_answer = safe_text(
-        result["final_answer"]
+        result[
+            "final_answer"
+        ]
     )
 
     st.html(
@@ -738,32 +833,85 @@ if result:
         """
     )
 
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric(
-        "درجة التوثيق",
-        f'{metrics["grounding_score"] * 100:.1f}%'
-    )
-
-    col2.metric(
-        "✅ مدعوم",
-        metrics["supported"]
-    )
-
-    col3.metric(
-        "⚠️ مدعوم جزئياً",
+    grounding_percent = (
         metrics[
-            "partially_supported"
+            "grounding_score"
         ]
+        * 100
     )
 
-    col4.metric(
-        "❌ غير مدعوم",
-        metrics["unsupported"]
+    st.html(
+        f"""
+        <div class="metrics-grid">
+
+            <div class="metric-card">
+
+                <div class="metric-card-label">
+                    درجة التوثيق
+                </div>
+
+                <div class="metric-card-value">
+                    {grounding_percent:.1f}%
+                </div>
+
+            </div>
+
+
+            <div class="
+                metric-card
+                metric-supported
+            ">
+
+                <div class="metric-card-label">
+                    ✅ مدعوم
+                </div>
+
+                <div class="metric-card-value">
+                    {metrics["supported"]}
+                </div>
+
+            </div>
+
+
+            <div class="
+                metric-card
+                metric-partial
+            ">
+
+                <div class="metric-card-label">
+                    ⚠️ مدعوم جزئياً
+                </div>
+
+                <div class="metric-card-value">
+                    {metrics["partially_supported"]}
+                </div>
+
+            </div>
+
+
+            <div class="
+                metric-card
+                metric-unsupported
+            ">
+
+                <div class="metric-card-label">
+                    ❌ غير مدعوم
+                </div>
+
+                <div class="metric-card-value">
+                    {metrics["unsupported"]}
+                </div>
+
+            </div>
+
+        </div>
+        """
     )
 
     st.progress(
-        metrics["grounding_score"]
+        metrics[
+            "grounding_score"
+        ]
     )
 
     st.html(
@@ -801,7 +949,9 @@ if result:
 
     with sources_tab:
 
-        sources = result["sources"]
+        sources = result[
+            "sources"
+        ]
 
         st.html(
             f"""
@@ -818,24 +968,46 @@ if result:
             start=1,
         ):
 
-            book_name = source.get(
-                "book_name",
-                "مصدر غير معروف",
+            book_name = (
+                source.get(
+                    "book_name"
+                )
+                or
+                "مصدر غير معروف"
             )
 
-            author_name = source.get(
-                "author_name",
-                "غير متوفر",
+            author_name = (
+                source.get(
+                    "author_name"
+                )
+                or
+                "غير متوفر"
             )
 
-            citation = source.get(
-                "citation",
-                "غير متوفر",
+            citation = (
+                source.get(
+                    "citation"
+                )
+                or
+                "غير متوفر"
+            )
+
+            printed_page = (
+                source.get(
+                    "printed_page"
+                )
+            )
+
+            source_url = extract_url(
+                source.get(
+                    "source_url"
+                )
             )
 
             with st.expander(
                 f"المصدر {index} — {book_name}",
-                expanded=(index == 1),
+                expanded=
+                    (index == 1),
             ):
 
                 st.html(
@@ -846,7 +1018,9 @@ if result:
                     """
                 )
 
-                info1, info2 = st.columns(2)
+                info1, info2 = (
+                    st.columns(2)
+                )
 
                 with info1:
 
@@ -868,11 +1042,15 @@ if result:
                         citation
                     )
 
-                source_url = extract_url(
-                    source.get(
-                        "source_url"
+                if printed_page:
+
+                    st.markdown(
+                        "**الصفحة المطبوعة:**"
                     )
-                )
+
+                    st.write(
+                        printed_page
+                    )
 
                 if source_url:
 
@@ -896,7 +1074,7 @@ if result:
                             safe_text(
                                 source.get(
                                     "body",
-                                    ""
+                                    "",
                                 )
                             )
                         }
@@ -904,8 +1082,10 @@ if result:
                     """
                 )
 
-                footnotes = source.get(
-                    "footnotes"
+                footnotes = (
+                    source.get(
+                        "footnotes"
+                    )
                 )
 
                 if footnotes:
@@ -1001,9 +1181,11 @@ if result:
                         direction: rtl;
                         text-align: right;
                     ">
+
                         <span class="{badge_class}">
                             {badge_text}
                         </span>
+
                     </div>
                     """
                 )
@@ -1022,7 +1204,7 @@ if result:
                             safe_text(
                                 claim.get(
                                     "claim",
-                                    ""
+                                    "",
                                 )
                             )
                         }
@@ -1045,7 +1227,7 @@ if result:
                             safe_text(
                                 claim.get(
                                     "reason",
-                                    ""
+                                    "",
                                 )
                             )
                         }
@@ -1054,16 +1236,19 @@ if result:
                     """
                 )
 
-                claim_sources = claim.get(
-                    "sources",
-                    []
+                claim_sources = (
+                    claim.get(
+                        "sources",
+                        [],
+                    )
                 )
 
                 if claim_sources:
 
                     st.caption(
                         "المصادر: "
-                        + ", ".join(
+                        +
+                        ", ".join(
                             claim_sources
                         )
                     )
@@ -1082,13 +1267,17 @@ if result:
 
         st.write(
             "**عبارة البحث المستخدمة:**",
-            result["search_terms"],
+            result[
+                "search_terms"
+            ],
         )
 
         st.write(
             "**عدد المصادر المسترجعة:**",
             len(
-                result["sources"]
+                result[
+                    "sources"
+                ]
             ),
         )
 
@@ -1111,7 +1300,9 @@ if result:
         # PERFORMANCE TIMINGS
         # =================================================
 
-        if result.get("timings"):
+        if result.get(
+            "timings"
+        ):
 
             st.markdown(
                 "### ⏱ زمن التنفيذ"
@@ -1123,34 +1314,22 @@ if result:
 
             st.write(
                 "**استرجاع المصادر:**",
-                (
-                    f'{timings.get("retrieval_seconds", 0)} '
-                    "ثانية"
-                )
+                f'{timings.get("retrieval_seconds", 0)} ثانية',
             )
 
             st.write(
                 "**إنشاء الإجابة:**",
-                (
-                    f'{timings.get("generation_seconds", 0)} '
-                    "ثانية"
-                )
+                f'{timings.get("generation_seconds", 0)} ثانية',
             )
 
             st.write(
                 "**التحقق من الادعاءات:**",
-                (
-                    f'{timings.get("verification_seconds", 0)} '
-                    "ثانية"
-                )
+                f'{timings.get("verification_seconds", 0)} ثانية',
             )
 
             st.write(
                 "**الوقت الإجمالي:**",
-                (
-                    f'{timings.get("total_seconds", 0)} '
-                    "ثانية"
-                )
+                f'{timings.get("total_seconds", 0)} ثانية',
             )
 
 
